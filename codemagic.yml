@@ -1,0 +1,50 @@
+# Builds the Capacitor app on a cloud Mac and uploads it to TestFlight.
+# No Mac required. Edit the three CHANGE-ME spots, then push to GitHub.
+workflows:
+  ios-bounce:
+    name: Bounce iOS (TestFlight)
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    integrations:
+      # CHANGE-ME (1): must match the App Store Connect API key NAME
+      # you add under Codemagic > Teams > Code signing identities.
+      app_store_connect: BounceASCKey
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        # CHANGE-ME (2): your bundle id (same in capacitor.config.json
+        # and the App record you create in App Store Connect).
+        bundle_identifier: com.austinv.bounce
+      node: 20
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Install npm dependencies
+        script: npm install
+      - name: Generate the native iOS project (runs in CI, no Mac needed)
+        script: |
+          if [ ! -d "ios" ]; then npx cap add ios; fi
+          npx cap sync ios
+      - name: Auto build number (so each upload is unique)
+        script: |
+          cd ios/App
+          agvtool new-version -all $(($(date +%s)/60)) || true
+      - name: Install CocoaPods
+        script: cd ios/App && pod install
+      - name: Apply signing profiles
+        script: xcode-project use-profiles
+      - name: Build signed IPA
+        script: |
+          xcode-project build-ipa \
+            --workspace "ios/App/App.xcworkspace" \
+            --scheme "App"
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        # CHANGE-ME (3) optional: add tester group names you created in TestFlight
+        # beta_groups:
+        #   - Internal Testers
