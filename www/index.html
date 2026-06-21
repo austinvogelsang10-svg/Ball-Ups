@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b0b1a">
+<title>Cube Bounce</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { height:100%; overflow:hidden; background:#0b0b1a; }
+  body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+         touch-action:none; user-select:none; -webkit-user-select:none; color:#fff; }
+  #c { display:block; width:100vw; height:100vh; position:fixed; inset:0; }
+
+  .screen { position:fixed; inset:0; z-index:4; display:flex; flex-direction:column;
+            align-items:center; justify-content:center; gap:14px; padding:7vh 8vw; text-align:center; }
+  .hidden { display:none !important; }
+  h1.logo { font-size:13vmin; font-weight:800; letter-spacing:-.03em; line-height:.95;
+            background:linear-gradient(90deg,#ff3d8b,#3df0ff); -webkit-background-clip:text;
+            background-clip:text; color:transparent; }
+  .sub { font-size:4vmin; font-weight:500; opacity:.8; }
+  .stat { font-size:5vmin; font-weight:700; }
+  .stat small { opacity:.6; font-weight:500; font-size:3.4vmin; display:block; }
+  .btn { pointer-events:auto; padding:.75em 2em; border-radius:999px; font-weight:800; font-size:5vmin;
+         color:#0b0b1a; border:none; cursor:pointer;
+         background:linear-gradient(90deg,#ff5ba0,#46e8ff); box-shadow:0 10px 34px rgba(70,232,255,.32); }
+  .btn:active { transform:scale(.96); }
+  .btn.alt { background:rgba(255,255,255,.12); color:#fff; box-shadow:none; font-size:4.2vmin; }
+  .row { display:flex; gap:12px; align-items:center; }
+  .coins { display:inline-flex; align-items:center; gap:6px; font-weight:800; font-size:4.4vmin; }
+  .coin-dot { width:1em; height:1em; border-radius:50%;
+              background:radial-gradient(circle at 35% 30%,#ffe48a,#f5a623); box-shadow:0 0 10px rgba(245,166,35,.6); }
+
+  #hud { position:fixed; inset:0; z-index:3; pointer-events:none; }
+  #score { position:absolute; top:max(5vh,34px); left:0; right:0; text-align:center;
+           font-size:13vmin; font-weight:800; text-shadow:0 0 22px rgba(80,240,255,.5); transition:transform .09s ease; }
+  #hudCoins { position:absolute; top:max(14px,env(safe-area-inset-top)); left:16px; }
+  #powers { position:absolute; top:calc(max(14px,env(safe-area-inset-top)) + 44px); left:16px; display:flex; flex-direction:column; gap:6px; }
+  .pwr { display:flex; align-items:center; gap:6px; background:rgba(0,0,0,.32); padding:4px 9px; border-radius:999px; font-size:3.4vmin; backdrop-filter:blur(4px); }
+  .pwr .bar { width:40px; height:5px; border-radius:3px; background:rgba(255,255,255,.25); overflow:hidden; }
+  .pwr .bar i { display:block; height:100%; background:#fff; }
+
+  #mute { position:fixed; top:max(14px,env(safe-area-inset-top)); right:16px; width:38px; height:38px;
+          border:none; border-radius:50%; background:rgba(255,255,255,.12); color:#fff; font-size:17px;
+          display:grid; place-items:center; cursor:pointer; z-index:6; backdrop-filter:blur(6px); pointer-events:auto; }
+
+  #shop { justify-content:flex-start; gap:0; padding:0; }
+  .shophead { width:100%; display:flex; align-items:center; justify-content:space-between; padding:max(16px,env(safe-area-inset-top)) 18px 10px; }
+  .shophead h2 { font-size:6vmin; font-weight:800; }
+  .tabs { display:flex; gap:8px; padding:4px 16px 12px; }
+  .tab { pointer-events:auto; padding:.5em 1.1em; border-radius:999px; font-weight:700; font-size:3.7vmin; background:rgba(255,255,255,.1); cursor:pointer; }
+  .tab.on { background:linear-gradient(90deg,#ff5ba0,#46e8ff); color:#0b0b1a; }
+  #grid { width:100%; flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:6px 16px 28px; align-content:start; }
+  .card { pointer-events:auto; background:rgba(255,255,255,.07); border:1.5px solid transparent; border-radius:18px; padding:14px 12px; display:flex; flex-direction:column; align-items:center; gap:8px; cursor:pointer; }
+  .card.equipped { border-color:#46e8ff; box-shadow:0 0 20px rgba(70,232,255,.25); }
+  .swatch { width:54px; height:54px; border-radius:50%; box-shadow:0 0 18px rgba(255,255,255,.15); }
+  .card .nm { font-weight:700; font-size:3.7vmin; }
+  .card .tag { font-size:3.4vmin; font-weight:800; display:flex; align-items:center; gap:5px; }
+  .card .tag.own { color:#7fffc4; } .card .tag.eq { color:#46e8ff; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="home" class="screen">
+  <h1 class="logo">Cube<br>Bounce</h1>
+  <div class="stat" id="homeHigh"><small>HIGH SCORE</small>0</div>
+  <div class="coins"><span class="coin-dot"></span><span id="homeCoins">0</span></div>
+  <button class="btn" id="playBtn">Play</button>
+  <button class="btn alt" id="shopBtn">Shop</button>
+</div>
+
+<div id="shop" class="screen hidden">
+  <div class="shophead">
+    <button class="btn alt" id="shopBack">‹ Back</button>
+    <h2>Shop</h2>
+    <div class="coins"><span class="coin-dot"></span><span id="shopCoins">0</span></div>
+  </div>
+  <div class="tabs">
+    <div class="tab on" data-cat="player">Player</div>
+    <div class="tab" data-cat="ball">Ball</div>
+    <div class="tab" data-cat="trail">Trail</div>
+  </div>
+  <div id="grid"></div>
+</div>
+
+<div id="over" class="screen hidden">
+  <h1 class="logo" style="font-size:9vmin">Game Over</h1>
+  <div class="stat" id="ovScore"><small>SCORE</small>0</div>
+  <div class="coins"><span class="coin-dot"></span>+<span id="ovCoins">0</span></div>
+  <div class="sub" id="ovBest">Best 0</div>
+  <div class="row">
+    <button class="btn" id="retryBtn">Retry</button>
+    <button class="btn alt" id="homeBtn">Home</button>
+  </div>
+</div>
+
+<div id="hud" class="hidden">
+  <div id="score">0</div>
+  <div id="hudCoins" class="coins"><span class="coin-dot"></span><span id="runCoins">0</span></div>
+  <div id="powers"></div>
+</div>
+
+<button id="mute" aria-label="Toggle sound">&#9834;</button>
+
+<script src="./three.min.js"></script>
+<script>
+(() => {
+  const Store = (() => {
+    let mem = {};
+    return {
+      get(k){ try { const v = localStorage.getItem(k); return v==null?mem[k]:v; } catch(e){ return mem[k]; } },
+      set(k,v){ try { localStorage.setItem(k,v); } catch(e){ mem[k]=v; } }
+    };
+  })();
+  const DEFAULT_SAVE = { coins:0, high:0,
+    owned:{ player:['default'], ball:['default'], trail:['default'] },
+    equip:{ player:'default', ball:'default', trail:'default' } };
+  let save;
+  try { save = JSON.parse(Store.get('cubebounce')) || DEFAULT_SAVE; } catch(e){ save = DEFAULT_SAVE; }
+  save.owned = Object.assign({player:['default'],ball:['default'],trail:['default']}, save.owned||{});
+  save.equip = Object.assign({player:'default',ball:'default',trail:'default'}, save.equip||{});
+  const persist = () => Store.set('cubebounce', JSON.stringify(save));
+
+  const CATALOG = {
+    player: [
+      {id:'default',name:'Magenta',color:0xff3d8b,price:0},
+      {id:'sunset', name:'Sunset', color:0xff8a3d,price:80},
+      {id:'emerald',name:'Emerald',color:0x36e07a,price:120},
+      {id:'violet', name:'Violet', color:0xa05bff,price:120},
+      {id:'ice',    name:'Ice',    color:0x9fe8ff,price:180},
+      {id:'gold',   name:'Gold',   color:0xffd24a,price:260},
+    ],
+    ball: [
+      {id:'default',name:'Cyan',  color:0x3df0ff,price:0},
+      {id:'lime',   name:'Lime',  color:0xb6ff3d,price:80},
+      {id:'rose',   name:'Rose',  color:0xff5b8a,price:120},
+      {id:'amber',  name:'Amber', color:0xffc23d,price:120},
+      {id:'plasma', name:'Plasma',color:0xc23dff,price:180},
+      {id:'white',  name:'White', color:0xffffff,price:200},
+    ],
+    trail: [
+      {id:'default',name:'Cyan',   color:0x3df0ff,price:0},
+      {id:'flames', name:'Flames', color:0xff7a18,price:140},
+      {id:'tron',   name:'Tron',   color:0x39e0ff,price:180},
+      {id:'water',  name:'Water',  color:0x3aa0ff,price:180},
+      {id:'gold',   name:'Gold',   color:0xffd24a,price:240},
+      {id:'rainbow',name:'Rainbow',color:0xff4db8,price:360},
+    ],
+  };
+  const findItem = (cat,id) => CATALOG[cat].find(i=>i.id===id) || CATALOG[cat][0];
+  const owns = (cat,id) => save.owned[cat].includes(id);
+
+  const EDGE_COLOR = 0x9fb4ff;
+  const HW = 3.0, CUBE_H = 6.0;
+  const PR = 0.72, SR = 0.46;
+  let   G = 16;
+  const E = 1.0, WALL_E = 0.9;
+  const MINUP = 10.5, MAXSPD = 34;
+
+  const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), antialias:true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2.5));
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(52,1,0.1,200);
+  const BASE = { y:6.6, z:12.4, look:2.6 };
+  camera.position.set(0,BASE.y,BASE.z); camera.lookAt(0,BASE.look,0);
+
+  function glowTexture(){
+    const s=128,c=document.createElement('canvas'); c.width=c.height=s; const x=c.getContext('2d');
+    const g=x.createRadialGradient(s/2,s/2,0,s/2,s/2,s/2);
+    g.addColorStop(0,'rgba(255,255,255,1)'); g.addColorStop(.25,'rgba(255,255,255,.55)'); g.addColorStop(1,'rgba(255,255,255,0)');
+    x.fillStyle=g; x.fillRect(0,0,s,s); return new THREE.CanvasTexture(c);
+  }
+  const GLOW = glowTexture();
+
+  const bgC=document.createElement('canvas'); bgC.width=4; bgC.height=256; const bgX=bgC.getContext('2d');
+  const bgTex=new THREE.CanvasTexture(bgC); scene.background=bgTex;
+  function updateBg(t){
+    const h=(t*5)%360; const g=bgX.createLinearGradient(0,0,0,256);
+    g.addColorStop(0,`hsl(${h|0},60%,7%)`); g.addColorStop(.55,`hsl(${(h+34)%360|0},65%,13%)`); g.addColorStop(1,`hsl(${(h+70)%360|0},70%,20%)`);
+    bgX.fillStyle=g; bgX.fillRect(0,0,4,256); bgTex.needsUpdate=true;
+  }
+
+  scene.add(new THREE.AmbientLight(0x8a93c8,0.95));
+  const key=new THREE.PointLight(0xffffff,0.7); key.position.set(5,12,8); scene.add(key);
+  const rim=new THREE.PointLight(0xff5ba0,0.5); rim.position.set(-6,4,4); scene.add(rim);
+
+  const edges=new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(HW*2,CUBE_H,HW*2)),
+    new THREE.LineBasicMaterial({color:EDGE_COLOR,transparent:true,opacity:0.35}));
+  edges.position.y=CUBE_H/2; scene.add(edges);
+  const grid=new THREE.GridHelper(HW*2,12,EDGE_COLOR,0x2a2f55);
+  grid.material.transparent=true; grid.material.opacity=0.3; grid.position.y=0.005; scene.add(grid);
+  scene.add(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(-HW,0.01,-HW),new THREE.Vector3(HW,0.01,-HW),new THREE.Vector3(HW,0.01,HW),new THREE.Vector3(-HW,0.01,HW)]),
+    new THREE.LineBasicMaterial({color:EDGE_COLOR,transparent:true,opacity:0.6})));
+
+  function halo(color,scale){
+    const s=new THREE.Sprite(new THREE.SpriteMaterial({map:GLOW,color,transparent:true,blending:THREE.AdditiveBlending,depthWrite:false,opacity:0.6}));
+    s.scale.set(scale,scale,scale); return s;
+  }
+
+  const player=new THREE.Mesh(new THREE.SphereGeometry(PR,40,28),
+    new THREE.MeshStandardMaterial({color:0xff3d8b,emissive:0xff3d8b,emissiveIntensity:0.55,roughness:0.25,metalness:0.1}));
+  const playerHalo=halo(0xff3d8b,PR*3.4); player.add(playerHalo); scene.add(player);
+  let px=0,pz=0,ptx=0,ptz=0; const pvel=new THREE.Vector3(); let pScale=1;
+
+  const ball=new THREE.Mesh(new THREE.SphereGeometry(SR,32,24),
+    new THREE.MeshStandardMaterial({color:0x3df0ff,emissive:0x3df0ff,emissiveIntensity:0.75,roughness:0.2,metalness:0.1}));
+  const ballHalo=halo(0x3df0ff,SR*3.6); ball.add(ballHalo); scene.add(ball);
+  const pos=new THREE.Vector3(0,CUBE_H+2,0), vel=new THREE.Vector3();
+
+  const marker=new THREE.Mesh(new THREE.PlaneGeometry(1,1),
+    new THREE.MeshBasicMaterial({map:GLOW,color:0x3df0ff,transparent:true,blending:THREE.AdditiveBlending,depthWrite:false,opacity:0}));
+  marker.rotation.x=-Math.PI/2; marker.position.y=0.03; scene.add(marker);
+
+  const TRAIL=34, trail=[], trailPos=[];
+  for(let i=0;i<TRAIL;i++){ const s=new THREE.Sprite(new THREE.SpriteMaterial({map:GLOW,color:0x3df0ff,transparent:true,blending:THREE.AdditiveBlending,depthWrite:false,opacity:0})); s.visible=false; scene.add(s); trail.push(s); }
+  const _c=new THREE.Color();
+  let ballColorHex=0x3df0ff;
+  function trailStyle(id,frac,idx,t){
+    switch(id){
+      case 'flames': _c.setHSL(0.02+0.10*frac,1,0.5); return {color:_c,op:0.6*frac*frac,sc:SR*2.1*frac+0.06};
+      case 'tron':   _c.setHex(0x39e0ff); return {color:_c,op:0.7*frac,sc:SR*1.2*frac+0.04};
+      case 'water':  _c.setHSL(0.57,0.9,0.55); return {color:_c,op:0.5*frac*frac,sc:SR*1.9*frac+0.05};
+      case 'gold':   _c.setHex(0xffd24a); return {color:_c,op:0.6*frac*frac,sc:SR*1.7*frac+0.05};
+      case 'rainbow':_c.setHSL((t*0.12+idx*0.03)%1,0.9,0.6); return {color:_c,op:0.6*frac*frac,sc:SR*1.8*frac+0.05};
+      default:       _c.setHex(ballColorHex); return {color:_c,op:0.55*frac*frac,sc:SR*1.7*frac+0.05};
+    }
+  }
+
+  function rnd(a,b){ return a+Math.random()*(b-a); }
+  const coinGeo=new THREE.CylinderGeometry(0.32,0.32,0.08,22);
+  const coinMat=new THREE.MeshStandardMaterial({color:0xffcf45,emissive:0xffaa20,emissiveIntensity:0.6,roughness:0.3,metalness:0.6});
+  const coins=[];
+  function spawnCoin(){ if(coins.length>=4) return;
+    const m=new THREE.Mesh(coinGeo,coinMat); m.rotation.x=Math.PI/2;
+    m.position.set(rnd(-HW+0.7,HW-0.7),rnd(1.6,CUBE_H-0.5),rnd(-HW+0.7,HW-0.7));
+    m.add(halo(0xffcf45,1.1)); scene.add(m); coins.push({mesh:m,life:13}); }
+  const brickGeo=new THREE.BoxGeometry(1.1,0.55,1.1);
+  const bricks=[];
+  function spawnBrick(){ if(bricks.length>=5) return;
+    const mat=new THREE.MeshStandardMaterial({color:0xff5a3c,emissive:0xff3a1c,emissiveIntensity:0.5,roughness:0.4,metalness:0.2,transparent:true,opacity:0.95});
+    const m=new THREE.Mesh(brickGeo,mat);
+    m.position.set(rnd(-HW+0.8,HW-0.8),rnd(1.8,CUBE_H-0.6),rnd(-HW+0.8,HW-0.8));
+    m.add(new THREE.LineSegments(new THREE.EdgesGeometry(brickGeo),new THREE.LineBasicMaterial({color:0xffd0c0,transparent:true,opacity:0.6})));
+    scene.add(m); bricks.push({mesh:m,hw:0.55,hh:0.275,hd:0.55}); }
+  const POWERS={
+    slowg: {name:'Slow Gravity',color:0x4d9bff,icon:'🌙',dur:8},
+    big:   {name:'Big Ball',    color:0x36e07a,icon:'⬆️',dur:9},
+    slowmo:{name:'Slow-Mo',     color:0xb86dff,icon:'⏳',dur:6},
+    magnet:{name:'Magnet',      color:0xff7ad1,icon:'🧲',dur:8},
+    shield:{name:'Shield',      color:0xffd24a,icon:'🛡️',dur:0},
+  };
+  const POWER_IDS=Object.keys(POWERS);
+  const orbGeo=new THREE.IcosahedronGeometry(0.42,0);
+  const orbs=[];
+  function spawnOrb(){ if(orbs.length>=2) return;
+    const type=POWER_IDS[(Math.random()*POWER_IDS.length)|0]; const col=POWERS[type].color;
+    const m=new THREE.Mesh(orbGeo,new THREE.MeshStandardMaterial({color:col,emissive:col,emissiveIntensity:0.7,roughness:0.2,metalness:0.3}));
+    m.position.set(rnd(-HW+0.7,HW-0.7),rnd(2,CUBE_H-0.5),rnd(-HW+0.7,HW-0.7));
+    m.add(halo(col,1.4)); scene.add(m); orbs.push({mesh:m,type,life:11}); }
+  function clearPickups(arr){ arr.forEach(o=>scene.remove(o.mesh)); arr.length=0; }
+
+  const active={ slowg:0, big:0, slowmo:0, magnet:0, shield:false };
+
+  const S={HOME:0,PLAY:1,OVER:2,SHOP:3};
+  let state=S.HOME, score=0, runCoins=0, scorePop=0, overTimer=0;
+  let coinT=0, brickT=0, orbT=0;
+
+  function applyCosmetics(){
+    const ps=findItem('player',save.equip.player), bs=findItem('ball',save.equip.ball);
+    player.material.color.setHex(ps.color); player.material.emissive.setHex(ps.color); playerHalo.material.color.setHex(ps.color);
+    ball.material.color.setHex(bs.color); ball.material.emissive.setHex(bs.color); ballHalo.material.color.setHex(bs.color); marker.material.color.setHex(bs.color);
+    ballColorHex=bs.color;
+  }
+
+  function haptic(kind){
+    try { const H=window.Capacitor&&window.Capacitor.Plugins&&window.Capacitor.Plugins.Haptics;
+      if(H){ if(kind==='heavy') H.impact({style:'HEAVY'}); else if(kind==='light') H.impact({style:'LIGHT'}); else H.impact({style:'MEDIUM'}); } } catch(e){}
+    try { if(navigator.vibrate) navigator.vibrate(kind==='heavy'?30:kind==='light'?8:16); } catch(e){}
+  }
+
+  let actx=null,muted=false;
+  function audioInit(){ if(!actx){ try{actx=new (window.AudioContext||window.webkitAudioContext)();}catch(e){} } if(actx&&actx.state==='suspended') actx.resume(); }
+  function blip(f,d,type){ if(!actx||muted) return; const o=actx.createOscillator(),g=actx.createGain();
+    o.type=type||'sine'; o.frequency.value=f; g.gain.setValueAtTime(0.0001,actx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.16,actx.currentTime+0.01); g.gain.exponentialRampToValueAtTime(0.0001,actx.currentTime+d);
+    o.connect(g); g.connect(actx.destination); o.start(); o.stop(actx.currentTime+d); }
+  document.getElementById('mute').onclick=()=>{ muted=!muted; const b=document.getElementById('mute');
+    b.innerHTML=muted?'&#8416;':'&#9834;'; b.style.opacity=muted?0.55:1; };
+
+  const $=id=>document.getElementById(id);
+  const elHome=$('home'), elShop=$('shop'), elOver=$('over'), elHud=$('hud');
+  const elScore=$('score'), elRunCoins=$('runCoins'), elPowers=$('powers');
+  function setScreen(){
+    elHome.classList.toggle('hidden',state!==S.HOME);
+    elShop.classList.toggle('hidden',state!==S.SHOP);
+    elOver.classList.toggle('hidden',state!==S.OVER||overTimer>0);
+    elHud.classList.toggle('hidden',state!==S.PLAY);
+  }
+  function refreshHome(){ $('homeHigh').innerHTML='<small>HIGH SCORE</small>'+save.high; $('homeCoins').textContent=save.coins; }
+
+  let shopCat='player';
+  function renderShop(){
+    $('shopCoins').textContent=save.coins; const grid=$('grid'); grid.innerHTML='';
+    CATALOG[shopCat].forEach(item=>{
+      const card=document.createElement('div'); card.className='card';
+      const equipped=save.equip[shopCat]===item.id; if(equipped) card.classList.add('equipped');
+      const sw=document.createElement('div'); sw.className='swatch'; const hex='#'+item.color.toString(16).padStart(6,'0');
+      if(shopCat==='trail'&&item.id==='rainbow') sw.style.background='conic-gradient(red,orange,yellow,lime,cyan,blue,magenta,red)';
+      else if(shopCat==='trail'&&item.id==='flames') sw.style.background='linear-gradient(180deg,#ffd24a,#ff7a18,#ff2d2d)';
+      else sw.style.background='radial-gradient(circle at 35% 30%, #fff6, '+hex+')';
+      card.appendChild(sw);
+      const nm=document.createElement('div'); nm.className='nm'; nm.textContent=item.name; card.appendChild(nm);
+      const tag=document.createElement('div'); tag.className='tag';
+      if(equipped){ tag.classList.add('eq'); tag.textContent='Equipped'; }
+      else if(owns(shopCat,item.id)){ tag.classList.add('own'); tag.textContent='Equip'; }
+      else { tag.innerHTML='<span class="coin-dot" style="width:.8em;height:.8em"></span>'+item.price; }
+      card.appendChild(tag); card.onclick=()=>buyOrEquip(item); grid.appendChild(card);
+    });
+  }
+  function buyOrEquip(item){
+    audioInit();
+    if(owns(shopCat,item.id)){ save.equip[shopCat]=item.id; applyCosmetics(); persist(); renderShop(); blip(560,0.08); haptic('light'); }
+    else if(save.coins>=item.price){ save.coins-=item.price; save.owned[shopCat].push(item.id); save.equip[shopCat]=item.id;
+      applyCosmetics(); persist(); renderShop(); refreshHome(); blip(720,0.12); haptic('medium'); }
+    else { blip(180,0.18,'square'); }
+  }
+  document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on')); t.classList.add('on'); shopCat=t.dataset.cat; renderShop();
+  });
+  $('shopBtn').onclick=()=>{ audioInit(); state=S.SHOP; shopCat='player';
+    document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.cat==='player')); renderShop(); setScreen(); };
+  $('shopBack').onclick=()=>{ state=S.HOME; refreshHome(); setScreen(); };
+
+  function resetPowers(){ active.slowg=active.big=active.slowmo=active.magnet=0; active.shield=false; G=16; }
+  function start(){
+    score=0; runCoins=0; scorePop=0; overTimer=0; coinT=2; brickT=6; orbT=10;
+    elScore.textContent='0'; elRunCoins.textContent='0';
+    px=pz=ptx=ptz=0; player.position.set(0,PR,0); player.scale.setScalar(1); pScale=1; pvel.set(0,0,0);
+    pos.set(rnd(-1,1),CUBE_H+1.5,rnd(-1,1)); vel.set(rnd(-2,2),-1.5,rnd(-2,2)); trailPos.length=0;
+    clearPickups(coins); clearPickups(bricks); clearPickups(orbs); resetPowers(); elPowers.innerHTML='';
+    state=S.PLAY; setScreen();
+  }
+  function over(){ state=S.OVER; overTimer=0.6; save.coins+=runCoins; if(score>save.high) save.high=score; persist();
+    $('ovScore').innerHTML='<small>SCORE</small>'+score; $('ovCoins').textContent=runCoins; $('ovBest').textContent='Best '+save.high;
+    blip(150,0.35,'triangle'); haptic('heavy'); }
+  $('playBtn').onclick=()=>{ audioInit(); start(); };
+  $('retryBtn').onclick=()=>{ audioInit(); start(); };
+  $('homeBtn').onclick=()=>{ state=S.HOME; refreshHome(); setScreen(); };
+
+  const ground=new THREE.Plane(new THREE.Vector3(0,1,0),0);
+  const rc=new THREE.Raycaster(), ndc=new THREE.Vector2(), hit=new THREE.Vector3();
+  function moveTo(cx,cy){ ndc.x=(cx/innerWidth)*2-1; ndc.y=-(cy/innerHeight)*2+1; rc.setFromCamera(ndc,camera);
+    if(rc.ray.intersectPlane(ground,hit)){ ptx=Math.max(-HW+PR,Math.min(HW-PR,hit.x)); ptz=Math.max(-HW+PR,Math.min(HW-PR,hit.z)); } }
+  renderer.domElement.addEventListener('pointerdown',e=>{ if(state===S.PLAY){ e.preventDefault(); moveTo(e.clientX,e.clientY);} },{passive:false});
+  renderer.domElement.addEventListener('pointermove',e=>{ if(state===S.PLAY){ e.preventDefault(); moveTo(e.clientX,e.clientY);} },{passive:false});
+  addEventListener('resize',resize);
+  function resize(){ renderer.setSize(innerWidth,innerHeight,false); camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); }
+
+  function activate(type){ if(type==='shield') active.shield=true; else active[type]=POWERS[type].dur; blip(640,0.14,'sine'); haptic('medium'); renderPowerHud(); }
+  function renderPowerHud(){
+    elPowers.innerHTML='';
+    POWER_IDS.forEach(id=>{ const on=id==='shield'?active.shield:active[id]>0; if(!on) return;
+      const p=POWERS[id]; const frac=id==='shield'?1:Math.max(0,active[id]/p.dur);
+      const d=document.createElement('div'); d.className='pwr';
+      d.innerHTML=`<span>${p.icon}</span>`+(id==='shield'?'':`<span class="bar"><i style="width:${(frac*100)|0}%;background:#${p.color.toString(16).padStart(6,'0')}"></i></span>`);
+      elPowers.appendChild(d);
+    });
+  }
+
+  function bounce(n){
+    const vn=(vel.x-pvel.x)*n.x+(vel.y-pvel.y)*n.y+(vel.z-pvel.z)*n.z;
+    if(vn<0){ vel.x-=(1+E)*vn*n.x; vel.y-=(1+E)*vn*n.y; vel.z-=(1+E)*vn*n.z; }
+    if(vel.y<MINUP) vel.y=MINUP;
+    const sp=vel.length(); if(sp>MAXSPD) vel.multiplyScalar(MAXSPD/sp);
+    const pr=PR*pScale; pos.copy(player.position).addScaledVector(n,pr+SR+0.001);
+    score++; elScore.textContent=score; scorePop=1; blip(420+Math.min(score,30)*10,0.10,'sine'); haptic('medium');
+  }
+
+  let last=performance.now(), tSec=0;
+  function tick(now){
+    let dt=Math.min((now-last)/1000,0.05); last=now; tSec+=dt;
+    const ts=active.slowmo>0?0.55:1; const pdt=dt*ts;
+    updateBg(tSec);
+    edges.material.opacity=0.28+0.12*Math.sin(tSec*1.5);
+    if(scorePop>0){ scorePop=Math.max(0,scorePop-dt*3); elScore.style.transform=`scale(${1+scorePop*0.18})`; }
+
+    let hudDirty=false;
+    ['slowg','big','slowmo','magnet'].forEach(id=>{ if(active[id]>0){ active[id]=Math.max(0,active[id]-dt); hudDirty=true; } });
+    G = active.slowg>0 ? 8 : 16;
+    const targetScale=active.big>0?1.7:1; pScale+=(targetScale-pScale)*Math.min(1,dt*8); player.scale.setScalar(pScale);
+    if(hudDirty) renderPowerHud();
+
+    const ox=px,oz=pz; px+=(ptx-px)*Math.min(1,dt*16); pz+=(ptz-pz)*Math.min(1,dt*16);
+    player.position.set(px,PR*pScale,pz);
+    if(dt>0) pvel.set((px-ox)/dt,0,(pz-oz)/dt);
+    const psp=Math.hypot(pvel.x,pvel.z); if(psp>26) pvel.multiplyScalar(26/psp);
+
+    if(state===S.PLAY){
+      coinT-=dt; if(coinT<=0){ spawnCoin(); coinT=rnd(3.5,6); }
+      orbT-=dt;  if(orbT<=0){ spawnOrb(); orbT=rnd(12,20); }
+      if(score>=15){ brickT-=dt; if(brickT<=0){ spawnBrick(); brickT=rnd(4,7); } }
+
+      vel.y-=G*pdt; pos.addScaledVector(vel,pdt);
+      if(pos.x<-HW+SR){ pos.x=-HW+SR; vel.x=Math.abs(vel.x)*WALL_E; }
+      if(pos.x> HW-SR){ pos.x= HW-SR; vel.x=-Math.abs(vel.x)*WALL_E; }
+      if(pos.z<-HW+SR){ pos.z=-HW+SR; vel.z=Math.abs(vel.z)*WALL_E; }
+      if(pos.z> HW-SR){ pos.z= HW-SR; vel.z=-Math.abs(vel.z)*WALL_E; }
+
+      for(let i=bricks.length-1;i>=0;i--){ const b=bricks[i], bm=b.mesh.position;
+        const cx=Math.max(bm.x-b.hw,Math.min(pos.x,bm.x+b.hw));
+        const cy=Math.max(bm.y-b.hh,Math.min(pos.y,bm.y+b.hh));
+        const cz=Math.max(bm.z-b.hd,Math.min(pos.z,bm.z+b.hd));
+        const dx=pos.x-cx,dy=pos.y-cy,dz=pos.z-cz; const d2=dx*dx+dy*dy+dz*dz;
+        if(d2<SR*SR){
+          let nx=dx,ny=dy,nz=dz,L=Math.sqrt(d2);
+          if(L<1e-4){ nx=pos.x-bm.x; ny=pos.y-bm.y; nz=pos.z-bm.z; L=Math.hypot(nx,ny,nz)||1; }
+          nx/=L; ny/=L; nz/=L;
+          const vn=vel.x*nx+vel.y*ny+vel.z*nz; if(vn<0){ vel.x-=2*vn*nx; vel.y-=2*vn*ny; vel.z-=2*vn*nz; }
+          pos.set(cx+nx*SR,cy+ny*SR,cz+nz*SR);
+          scene.remove(b.mesh); bricks.splice(i,1); runCoins+=1; elRunCoins.textContent=runCoins; blip(300,0.12,'square'); haptic('heavy');
+        }
+      }
+
+      const pr=PR*pScale;
+      const dpx=pos.x-player.position.x,dpy=pos.y-player.position.y,dpz=pos.z-player.position.z;
+      const dist=Math.hypot(dpx,dpy,dpz);
+      if(dist<=SR+pr && dist>1e-4){ bounce(new THREE.Vector3(dpx/dist,dpy/dist,dpz/dist)); }
+      else if(pos.y-SR<=0){
+        if(active.shield){ active.shield=false; pos.y=SR; vel.y=MINUP; renderPowerHud(); blip(520,0.18,'sine'); haptic('heavy'); }
+        else { pos.y=SR; over(); }
+      }
+
+      for(let i=coins.length-1;i>=0;i--){ const co=coins[i]; co.life-=dt; co.mesh.rotation.z+=dt*3;
+        if(active.magnet>0 && co.mesh.position.distanceTo(pos)<3.2) co.mesh.position.lerp(pos,Math.min(1,dt*4));
+        if(co.mesh.position.distanceTo(pos)<SR+0.36){ scene.remove(co.mesh); coins.splice(i,1); runCoins+=1; elRunCoins.textContent=runCoins; blip(880,0.08,'sine'); haptic('light'); continue; }
+        if(co.life<=0){ scene.remove(co.mesh); coins.splice(i,1); }
+      }
+      for(let i=orbs.length-1;i>=0;i--){ const o=orbs[i]; o.life-=dt; o.mesh.rotation.y+=dt*1.6; o.mesh.rotation.x+=dt*1.1;
+        o.mesh.scale.setScalar(1+0.12*Math.sin(tSec*4));
+        if(o.mesh.position.distanceTo(pos)<SR+0.44){ activate(o.type); scene.remove(o.mesh); orbs.splice(i,1); continue; }
+        if(o.life<=0){ scene.remove(o.mesh); orbs.splice(i,1); }
+      }
+    } else if(state===S.OVER){
+      if(overTimer>0){ overTimer-=dt; if(overTimer<=0) setScreen(); }
+    } else {
+      pos.set(0,CUBE_H+1.4+Math.sin(now/600)*0.22,0);
+    }
+    ball.position.copy(pos);
+
+    const hgt=Math.max(0,pos.y);
+    marker.position.set(pos.x,0.03,pos.z); const ms=SR*2.4+hgt*0.12; marker.scale.set(ms,ms,ms);
+    marker.material.opacity=state===S.PLAY?Math.min(0.5,0.12+hgt*0.04):0;
+
+    if(state===S.PLAY){ trailPos.unshift(pos.clone()); if(trailPos.length>TRAIL) trailPos.pop(); } else trailPos.length=0;
+    const tid=save.equip.trail;
+    for(let i=0;i<TRAIL;i++){ const s=trail[i];
+      if(i<trailPos.length){ s.visible=true; s.position.copy(trailPos[i]); const st=trailStyle(tid,1-i/TRAIL,i,tSec);
+        s.material.color.copy(st.color); s.material.opacity=st.op; s.scale.set(st.sc,st.sc,st.sc); }
+      else s.visible=false;
+    }
+
+    const extra=Math.max(0,pos.y-CUBE_H*0.85);
+    const tY=BASE.y+extra*0.55, tZ=BASE.z+extra*0.5, tL=BASE.look+extra*0.5;
+    camera.position.x+=(0-camera.position.x)*Math.min(1,dt*3);
+    camera.position.y+=(tY-camera.position.y)*Math.min(1,dt*3);
+    camera.position.z+=(tZ-camera.position.z)*Math.min(1,dt*3);
+    camera.lookAt(0,tL,0);
+
+    renderer.render(scene,camera);
+    requestAnimationFrame(tick);
+  }
+
+  applyCosmetics(); refreshHome(); setScreen(); resize();
+  requestAnimationFrame(t=>{ last=t; tick(t); });
+})();
+</script>
+</body>
+</html>
