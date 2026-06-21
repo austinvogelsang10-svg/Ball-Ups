@@ -11,7 +11,7 @@ workflows:
     environment:
       vars:
         BUNDLE_ID: "com.austinv.bounce"
-      node: 20
+      node: 22
       xcode: latest
       cocoapods: default
     scripts:
