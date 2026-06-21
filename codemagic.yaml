@@ -6,10 +6,11 @@ workflows:
     instance_type: mac_mini_m2
     max_build_duration: 60
     integrations:
+      # Must match the App Store Connect API key NAME you added in Codemagic.
       app_store_connect: BounceASCKey
     environment:
       groups:
-        - ios_signing
+        - ios_signing            # must contain CERT_KEY_B64 (secure)
       vars:
         BUNDLE_ID: "com.austinv.bounce"
       node: 22
@@ -31,6 +32,12 @@ workflows:
           echo "Bundle IDs before:"; grep PRODUCT_BUNDLE_IDENTIFIER App.xcodeproj/project.pbxproj | sort -u
           sed -i '' -E 's/PRODUCT_BUNDLE_IDENTIFIER = [^;]*;/PRODUCT_BUNDLE_IDENTIFIER = com.austinv.bounce;/g' App.xcodeproj/project.pbxproj
           echo "Bundle IDs after:"; grep PRODUCT_BUNDLE_IDENTIFIER App.xcodeproj/project.pbxproj | sort -u
+      - name: Set the home-screen display name
+        script: |
+          PL="ios/App/App/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Ball Ups" "$PL" 2>/dev/null \
+            || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string Ball Ups" "$PL" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Print :CFBundleDisplayName" "$PL" || true
       - name: Install CocoaPods
         script: |
           cd ios/App
