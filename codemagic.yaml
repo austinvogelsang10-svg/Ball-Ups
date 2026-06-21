@@ -1,6 +1,5 @@
 # Builds the Capacitor app on a cloud Mac and uploads it to TestFlight.
-# The signing key is stored base64-encoded in env var CERT_KEY_B64 (group
-# "ios_signing") so it pastes as a single line, then decoded during the build.
+# Signing key is stored base64 in env var CERT_KEY_B64 (group "ios_signing").
 workflows:
   ios-bounce:
     name: Bounce iOS (TestFlight)
@@ -10,7 +9,7 @@ workflows:
       app_store_connect: BounceASCKey
     environment:
       groups:
-        - ios_signing            # must contain CERT_KEY_B64 (secure)
+        - ios_signing
       vars:
         BUNDLE_ID: "com.austinv.bounce"
       node: 22
@@ -26,6 +25,12 @@ workflows:
           npx cap add ios --packagemanager cocoapods
           npx cap sync ios
           ls -la ios/App/Podfile
+      - name: Force the bundle identifier on the App target
+        script: |
+          cd ios/App
+          echo "Bundle IDs before:"; grep PRODUCT_BUNDLE_IDENTIFIER App.xcodeproj/project.pbxproj | sort -u
+          sed -i '' -E 's/PRODUCT_BUNDLE_IDENTIFIER = [^;]*;/PRODUCT_BUNDLE_IDENTIFIER = com.austinv.bounce;/g' App.xcodeproj/project.pbxproj
+          echo "Bundle IDs after:"; grep PRODUCT_BUNDLE_IDENTIFIER App.xcodeproj/project.pbxproj | sort -u
       - name: Install CocoaPods
         script: |
           cd ios/App
