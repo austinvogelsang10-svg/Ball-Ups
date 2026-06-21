@@ -1,5 +1,5 @@
 # Builds the Capacitor app on a cloud Mac and uploads it to TestFlight.
-# Explicit CLI signing: creates the certificate + profile if they don't exist.
+# Forces CocoaPods (Capacitor 8 defaults to Swift Package Manager).
 workflows:
   ios-bounce:
     name: Bounce iOS (TestFlight)
@@ -20,7 +20,7 @@ workflows:
         script: |
           set -e
           rm -rf ios
-          npx cap add ios
+          npx cap add ios --packagemanager cocoapods
           npx cap sync ios
           ls -la ios/App/Podfile
       - name: Install CocoaPods
@@ -37,7 +37,7 @@ workflows:
       - name: Add certificate to keychain
         script: keychain add-certificates
       - name: Apply signing profiles
-        script: xcode-project use-profiles
+        script: xcode-project use-profiles --project ios/App/App.xcodeproj
       - name: Auto build number
         script: |
           cd ios/App
