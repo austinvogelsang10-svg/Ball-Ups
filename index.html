@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#EF1432">
+<title>Bounce 3D</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { height:100%; overflow:hidden; background:#EF1432; }
+  body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+         touch-action:none; user-select:none; -webkit-user-select:none; }
+  #c { display:block; width:100vw; height:100vh; }
+  .ui { position:fixed; left:0; right:0; text-align:center; color:#fff; pointer-events:none; z-index:3; }
+  #score { top:max(7vh,42px); font-size:13vmin; font-weight:600; opacity:.95;
+           text-shadow:0 2px 12px rgba(120,0,12,.3); transition:transform .08s ease; }
+  #center { top:0; bottom:0; display:flex; flex-direction:column; align-items:center;
+            justify-content:center; gap:12px; }
+  #center h1 { font-size:13vmin; font-weight:700; letter-spacing:-.02em; }
+  #center p { font-size:4.4vmin; font-weight:500; opacity:.9; }
+  #center .big { font-size:17vmin; font-weight:700; line-height:1; }
+  #center .small { font-size:4vmin; opacity:.82; }
+  .pill { margin-top:10px; background:#fff; color:#EF1432; font-weight:600;
+          font-size:4.6vmin; padding:.6em 1.4em; border-radius:999px;
+          box-shadow:0 8px 24px rgba(120,0,12,.25); }
+  #over { display:none; }
+  #mute { position:fixed; top:max(14px,env(safe-area-inset-top)); right:16px; width:40px; height:40px;
+          border:none; border-radius:50%; background:rgba(255,255,255,.18); color:#fff; font-size:18px;
+          display:grid; place-items:center; cursor:pointer; z-index:5; backdrop-filter:blur(4px); }
+  #mute:active { transform:scale(.9); }
+  #mute:focus-visible { outline:2px solid #fff; outline-offset:2px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="score" class="ui" style="display:none">0</div>
+<div id="start" class="ui">
+  <div id="center"><h1>Bounce</h1><p>Move across the floor · keep the ball up</p><div class="pill">Tap to play</div></div>
+</div>
+<div id="over" class="ui">
+  <div id="center"><h1 style="font-size:9vmin">Game Over</h1>
+    <div class="big" id="finalScore">0</div>
+    <div class="small" id="bestScore">Best 0</div>
+    <div class="pill">Tap to retry</div></div>
+</div>
+<button id="mute" aria-label="Toggle sound">&#9834;</button>
+
+<script src="./three.min.js"></script>
+<script>
+(() => {
+  const RED = 0xEF1432;
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ---------- renderer / scene / camera ----------
+  const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), antialias: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2.5));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(RED);
+  scene.fog = new THREE.Fog(RED, 20, 48);
+
+  const camera = new THREE.PerspectiveCamera(46, 1, 0.1, 120);
+  camera.position.set(0, 11.5, 13);
+  camera.lookAt(0, 4, 0);
+
+  // ---------- lights ----------
+  scene.add(new THREE.HemisphereLight(0xffffff, 0xc01530, 0.55));
+  const key = new THREE.DirectionalLight(0xffffff, 1.05);
+  key.position.set(-6, 14, 8);
+  key.castShadow = true;
+  key.shadow.mapSize.set(2048, 2048);
+  key.shadow.radius = 4;
+  key.shadow.bias = -0.0006;
+  const sc = key.shadow.camera;
+  sc.left = -8; sc.right = 8; sc.top = 12; sc.bottom = -8; sc.near = 0.5; sc.far = 48;
+  scene.add(key);
+  const fill = new THREE.DirectionalLight(0xffd9dc, 0.25);
+  fill.position.set(7, 6, 6);
+  scene.add(fill);
+
+  // ---------- floor ----------
+  function floorTexture() {
+    const s = 1024, cv = document.createElement('canvas'); cv.width = cv.height = s;
+    const x = cv.getContext('2d');
+    x.fillStyle = '#EF1432'; x.fillRect(0, 0, s, s);
+    const g = x.createRadialGradient(s/2, s/2, 12, s/2, s/2, s*0.5);
+    g.addColorStop(0.00, 'rgba(255,255,255,0.50)');
+    g.addColorStop(0.12, 'rgba(255,194,198,0.42)');
+    g.addColorStop(0.34, 'rgba(244,95,101,0.52)');
+    g.addColorStop(1.00, 'rgba(239,20,50,0.0)');
+    x.fillStyle = g; x.fillRect(0, 0, s, s);
+    const t = new THREE.CanvasTexture(cv);
+    t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    return t;
+  }
+  const floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(120, 120),
+    new THREE.MeshStandardMaterial({ map: floorTexture(), roughness: 0.92, metalness: 0.0 })
+  );
+  floor.rotation.x = -Math.PI / 2;
+  floor.receiveShadow = true;
+  scene.add(floor);
+
+  // ---------- ball, blob, landing marker ----------
+  const whiteMat = () => new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.28, metalness: 0.0 });
+  const BLOB_R = 0.95, BALL_R = 0.40;
+
+  const blob = new THREE.Mesh(new THREE.SphereGeometry(BLOB_R, 48, 32), whiteMat());
+  blob.castShadow = true; scene.add(blob);
+
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(BALL_R, 32, 24), whiteMat());
+  ball.castShadow = true; scene.add(ball);
+
+  // landing target ring on the floor (depth cue for where the ball will come down)
+  const marker = new THREE.Mesh(
+    new THREE.RingGeometry(BLOB_R * 0.72, BLOB_R * 0.95, 48),
+    new THREE.MeshBasicMaterial({ color: 0x8a0a16, transparent: true, opacity: 0.0, depthWrite: false })
+  );
+  marker.rotation.x = -Math.PI / 2;
+  marker.position.y = 0.03;
+  scene.add(marker);
+
+  // ---------- game state ----------
+  const S = { START: 0, PLAY: 1, OVER: 2 };
+  let state = S.START, score = 0, best = 0;
+  let blobX = 0, blobZ = 0, targetX = 0, targetZ = 0, blobSquash = 0;
+  const pos = new THREE.Vector3(0, 5.5, 0);   // ball position
+  const v = new THREE.Vector3(0, 0, 0);       // ball velocity
+  let ballSquash = 0, overTimer = 0;
+
+  const G = 26;
+  const APEX = 7.0;
+
+  // play bounds (computed from camera each resize)
+  let ballXlim = 2.2, ballZnear = 2.6, ballZfar = -2.6;
+  let blobXlim = 1.7, blobZnear = 2.1, blobZfar = -2.1;
+
+  const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  const rc = new THREE.Raycaster();
+  const v2 = new THREE.Vector2();
+  function castFloor(nx, ny) {
+    rc.setFromCamera(v2.set(nx, ny), camera);
+    const p = new THREE.Vector3();
+    return rc.ray.intersectPlane(floorPlane, p) ? p : null;
+  }
+  function computeBounds() {
+    const near = castFloor(0, -0.9);
+    const far  = castFloor(0, -0.12);
+    const side = castFloor(0.92, -0.62);
+    const zN = near ? near.z : 3, zF = far ? far.z : -3, eX = side ? Math.abs(side.x) : 2.6;
+    ballXlim = Math.max(1.4, eX - BALL_R);
+    ballZnear = zN - BALL_R; ballZfar = zF + BALL_R;
+    blobXlim = Math.max(1.0, eX - BLOB_R);
+    blobZnear = zN - BLOB_R; blobZfar = zF + BLOB_R;
+  }
+
+  function resize() {
+    const w = innerWidth, h = innerHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h; camera.updateProjectionMatrix();
+    computeBounds();
+  }
+  addEventListener('resize', resize);
+  addEventListener('orientationchange', () => setTimeout(resize, 200));
+
+  // ---------- input ----------
+  const ndc = new THREE.Vector2();
+  function moveTo(cx, cy) {
+    ndc.x = (cx / innerWidth) * 2 - 1;
+    ndc.y = -(cy / innerHeight) * 2 + 1;
+    rc.setFromCamera(ndc, camera);
+    const p = new THREE.Vector3();
+    if (rc.ray.intersectPlane(floorPlane, p)) {
+      targetX = Math.max(-blobXlim, Math.min(blobXlim, p.x));
+      targetZ = Math.max(blobZfar, Math.min(blobZnear, p.z));
+    }
+  }
+  function onMove(e) {
+    if (state !== S.PLAY) return;
+    const t = e.touches && e.touches[0] ? e.touches[0] : e;
+    moveTo(t.clientX, t.clientY);
+  }
+  function onDown(e) {
+    e.preventDefault(); audioInit();
+    if (state === S.START) startGame();
+    else if (state === S.OVER && overTimer <= 0) startGame();
+    if (state === S.PLAY) onMove(e);
+  }
+  renderer.domElement.addEventListener('pointerdown', onDown, { passive: false });
+  renderer.domElement.addEventListener('pointermove', onMove, { passive: false });
+  addEventListener('keydown', (e) => {
+    const sx = blobXlim * 0.16, sz = (blobZnear - blobZfar) * 0.12;
+    if (e.key === 'ArrowLeft') targetX = Math.max(-blobXlim, targetX - sx);
+    else if (e.key === 'ArrowRight') targetX = Math.min(blobXlim, targetX + sx);
+    else if (e.key === 'ArrowUp') targetZ = Math.max(blobZfar, targetZ - sz);
+    else if (e.key === 'ArrowDown') targetZ = Math.min(blobZnear, targetZ + sz);
+    else if (e.key === ' ' || e.key === 'Enter') { audioInit(); if (state !== S.PLAY) startGame(); }
+  });
+
+  // ---------- audio ----------
+  let actx = null, muted = false;
+  function audioInit() {
+    if (!actx) { try { actx = new (AudioContext || webkitAudioContext)(); } catch (e) {} }
+    if (actx && actx.state === 'suspended') actx.resume();
+  }
+  function blip(freq, dur, type) {
+    if (!actx || muted) return;
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = type || 'sine'; o.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, actx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.16, actx.currentTime + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime + dur);
+    o.connect(g); g.connect(actx.destination);
+    o.start(); o.stop(actx.currentTime + dur);
+  }
+  document.getElementById('mute').onclick = () => {
+    muted = !muted;
+    const b = document.getElementById('mute');
+    b.innerHTML = muted ? '&#8416;' : '&#9834;'; b.style.opacity = muted ? 0.55 : 1;
+  };
+
+  // ---------- ui ----------
+  const elScore = document.getElementById('score');
+  const elStart = document.getElementById('start');
+  const elOver = document.getElementById('over');
+  const show = (el, on) => el.style.display = on ? '' : 'none';
+
+  function startGame() {
+    score = 0; elScore.textContent = '0';
+    blobX = targetX = 0; blobZ = targetZ = 0;
+    pos.set(0, 6, 0); v.set(0, 2, 0);
+    ballSquash = 0; blobSquash = 0; overTimer = 0;
+    state = S.PLAY;
+    show(elStart, false); show(elOver, false); show(elScore, true);
+  }
+  function gameOver() {
+    state = S.OVER; overTimer = 0.5; best = Math.max(best, score);
+    document.getElementById('finalScore').textContent = score;
+    document.getElementById('bestScore').textContent = 'Best ' + best;
+    blip(170, 0.32, 'triangle');
+  }
+
+  function bounce() {
+    const blobTop = blob.position.y + BLOB_R;
+    const rise = APEX - blobTop;
+    v.y = Math.sqrt(2 * G * Math.max(rise, 2)) * (0.97 + Math.random() * 0.06);
+    // direct the ball in x/z by where it struck the blob
+    v.x += (pos.x - blobX) * 5.2;
+    v.z += (pos.z - blobZ) * 5.2;
+    // ensure it keeps roaming in 3D; difficulty ramps the minimum drift
+    let hs = Math.hypot(v.x, v.z);
+    const minHS = 2.0 + Math.min(score, 45) * 0.06;
+    if (hs < minHS) { const a = Math.random() * Math.PI * 2; v.x += Math.cos(a) * (minHS - hs); v.z += Math.sin(a) * (minHS - hs); }
+    const maxHS = 8.5; hs = Math.hypot(v.x, v.z);
+    if (hs > maxHS) { v.x *= maxHS / hs; v.z *= maxHS / hs; }
+    pos.y = blobTop + BALL_R;
+    if (!reduced) { blobSquash = 1; ballSquash = 1; }
+    score++; elScore.textContent = score;
+    elScore.style.transform = 'scale(1.18)';
+    setTimeout(() => elScore.style.transform = 'scale(1)', 90);
+    blip(430 + Math.min(score, 30) * 9, 0.11, 'sine');
+  }
+
+  // ---------- loop ----------
+  let last = performance.now();
+  function tick(now) {
+    let dt = Math.min((now - last) / 1000, 0.05); last = now;
+
+    // blob follow + squash recovery
+    blobX += (targetX - blobX) * Math.min(1, dt * 14);
+    blobZ += (targetZ - blobZ) * Math.min(1, dt * 14);
+    blobSquash += (0 - blobSquash) * Math.min(1, dt * 9);
+    ballSquash += (0 - ballSquash) * Math.min(1, dt * 11);
+    const bsx = 1 + blobSquash * 0.34, bsy = 1 - blobSquash * 0.40;
+    blob.position.set(blobX, BLOB_R * bsy, blobZ);
+    blob.scale.set(bsx, bsy, bsx);
+
+    if (state === S.PLAY) {
+      v.y -= G * dt;
+      pos.addScaledVector(v, dt);
+
+      // walls (x and z)
+      if (pos.x < -ballXlim) { pos.x = -ballXlim; v.x = Math.abs(v.x) * 0.98; }
+      if (pos.x > ballXlim) { pos.x = ballXlim; v.x = -Math.abs(v.x) * 0.98; }
+      if (pos.z < ballZfar) { pos.z = ballZfar; v.z = Math.abs(v.z) * 0.98; }
+      if (pos.z > ballZnear) { pos.z = ballZnear; v.z = -Math.abs(v.z) * 0.98; }
+
+      // collision with blob (horizontal distance in x/z)
+      const blobTop = blob.position.y + BLOB_R * bsy;
+      const d = Math.hypot(pos.x - blobX, pos.z - blobZ);
+      if (v.y < 0 && d <= BLOB_R * bsx * 0.95 + BALL_R && pos.y - BALL_R <= blobTop && pos.y > blob.position.y) bounce();
+
+      if (pos.y < -1.5) gameOver();
+    } else if (state === S.OVER) {
+      if (overTimer > 0) { overTimer -= dt; if (overTimer <= 0) show(elOver, true); }
+      v.y -= G * dt; pos.addScaledVector(v, dt); if (pos.y < -8) pos.y = -8;
+    } else { // START idle bob
+      pos.set(0, 5.6 + Math.sin(now / 600) * 0.25, 0);
+    }
+
+    ball.position.copy(pos);
+    const sq = ballSquash;
+    ball.scale.set(1 + sq * 0.3, 1 - sq * 0.36, 1 + sq * 0.3);
+
+    // landing marker tracks ball's ground position; fades in with height
+    marker.position.x = pos.x; marker.position.z = pos.z;
+    const hFrac = Math.max(0, Math.min(1, pos.y / APEX));
+    marker.material.opacity = state === S.PLAY ? (0.12 + hFrac * 0.32) : 0;
+
+    renderer.render(scene, camera);
+    requestAnimationFrame(tick);
+  }
+
+  resize();
+  requestAnimationFrame((t) => { last = t; tick(t); });
+})();
+</script>
+</body>
+</html>
