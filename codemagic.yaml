@@ -1,17 +1,16 @@
 # Builds the Capacitor app on a cloud Mac and uploads it to TestFlight.
-# Uses a STABLE signing key stored in Codemagic env var CERTIFICATE_PRIVATE_KEY
-# (variable group "ios_signing"), so the same certificate is reused every build.
+# The signing key is stored base64-encoded in env var CERT_KEY_B64 (group
+# "ios_signing") so it pastes as a single line, then decoded during the build.
 workflows:
   ios-bounce:
     name: Bounce iOS (TestFlight)
     instance_type: mac_mini_m2
     max_build_duration: 60
     integrations:
-      # Must match the App Store Connect API key NAME you added in Codemagic.
       app_store_connect: BounceASCKey
     environment:
       groups:
-        - ios_signing            # must contain CERTIFICATE_PRIVATE_KEY (secure)
+        - ios_signing            # must contain CERT_KEY_B64 (secure)
       vars:
         BUNDLE_ID: "com.austinv.bounce"
       node: 22
@@ -33,11 +32,15 @@ workflows:
           pod install
       - name: Set up keychain
         script: keychain initialize
+      - name: Decode signing key
+        script: |
+          echo "$CERT_KEY_B64" | base64 --decode > /tmp/cert_key.pem
+          echo "Key starts with:" && head -1 /tmp/cert_key.pem
       - name: Fetch signing files (creates cert + profile if missing)
         script: |
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --type IOS_APP_STORE \
-            --certificate-key=@env:CERTIFICATE_PRIVATE_KEY \
+            --certificate-key=@file:/tmp/cert_key.pem \
             --create
       - name: Add certificate to keychain
         script: keychain add-certificates
